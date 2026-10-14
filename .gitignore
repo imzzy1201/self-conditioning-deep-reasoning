@@ -1,0 +1,50 @@
+# --- Runtime data / outputs (created at run time) ---
+/data/
+/outputs/
+# Optional local copies of historical reference artifacts.
+/results/reference/
+
+# --- Weights, model checkpoints, predictions (never committed) ---
+*.safetensors
+*.bin
+*.ckpt
+*.pt
+*.pth
+checkpoint-*/
+!**/checkpoint-*/**/*.json
+!**/checkpoint-*/**/*.yaml
+
+# --- Secrets ---
+.env
+*.key
+*.pem
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- Logs / tmp ---
+logs/
+# W&B run directory: created in the working directory by any training run. Its
+# wandb-metadata.json / config.yaml record the entity (account) name, which this
+# repo keeps out of band (WANDB_ENTITY is set per environment).
+# Unanchored so a run started from a
+# subdirectory is caught too.
+wandb/
+*.log
+.tmp/
+*.tmp
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

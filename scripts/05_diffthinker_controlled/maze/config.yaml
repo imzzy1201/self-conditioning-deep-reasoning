@@ -1,0 +1,102 @@
+# 05_diffthinker_controlled / maze — Maze (walk-the-maze path tracing).
+#
+# Controlled FLUX.2-klein-base-4B comparison (VanillaFM vs SelfCondFM; LoRA
+# rank/alpha 32, lr 1e-4, global batch 16) over the DiffThinker evaluation set.
+# difficulties 8,16,32; 300 test instances; judge = walk `.txt` verify (CPU).
+# The new pair is re-selected from SelfCond@16000 by the shared FLOPs protocol
+# (docs/flops_protocol.md); the export's historical pair differs (see checkpoints).
+
+experiment:
+  id: maze
+  task: maze                    # eval_diffthinker --task key
+  label: Maze
+  backbone: flux2
+  mode: paper
+  config_version: 1
+
+data:
+  data_root: data/diffthinker
+  train_data_root: data/diffthinker/EndoCoT-Data/Maze
+  train_metadata: data/diffthinker/formatted/Maze/metadata_train.csv
+  eval_gt_root: data/diffthinker/EndoCoT/Maze
+  eval_metadata: data/diffthinker/formatted/Maze/metadata_test.csv
+  difficulties: [8, 16, 32]
+  num_eval_samples: 300
+
+model:
+  model_id: black-forest-labs/FLUX.2-klein-base-4B
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 32
+  lora_dropout: 0.0
+
+train:
+  num_processes: 4
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4     # effective batch = 1 x 4 x 4 = 16
+  num_workers: 8
+  preload_shards_count: 0          # W&B source runs: preload_shards=false/0 (PNG-mode data, no shards)
+  learning_rate: 1e-4
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 1000
+  vanilla_num_epochs: 11            # latest finished source run
+  selfcond_num_epochs: 5           # latest finished source run
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 2500                   # Vanilla cadence = the source vanilla eval grid
+  eval_every_steps: 2500             #   (A ran save 1000 / eval 2500; preflight forces save==eval).
+  selfcond_save_steps: 1000          # SelfCond cadence (save == eval per run; source ran 1000/1000)
+  selfcond_eval_every_steps: 1000
+  max_train_steps_vanilla: 48000
+  max_train_steps_selfcond: 23400    # A ran maze selfcond uncapped (num_epochs 5,
+                                     #   max_train_steps null -> 23400 steps at batch 16);
+                                     #   the other four tasks' runs capped at 16000.
+  eval_max_samples: 300
+  eval_num_inference_steps: 50
+
+method:
+  name: proj_condition
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: -10
+  condition_time_offset: 10
+
+flops:
+  measurement_micro_batches: 100
+  grad_accum: 4
+  num_processes: 4
+
+eval:
+  nfe: 50
+  seed: 0
+  max_samples: 300
+  metric: diffthinker_accuracy       # PASS / manifest instances (full denominator)
+  tsp_tolerance: 0.5                 # only consumed by TSP
+  needs_gpu_ocr: false
+
+checkpoints:
+  vanilla_dir: outputs/05_diffthinker_controlled/maze/vanilla
+  selfcond_dir: outputs/05_diffthinker_controlled/maze/selfcond
+  paper_selfcond_step: 16000
+  paper_vanilla_step: 40000          # paper Maze Vanilla 64.3 == this step's eval; the export's
+                                     #   47500 (59.3) came from its own highest-compute-pair rule
+
+outputs:
+  flops_dir: outputs/05_diffthinker_controlled/maze/flops
+  data_manifest: outputs/05_diffthinker_controlled/maze/data_manifest.json
+  pair_manifest: outputs/05_diffthinker_controlled/maze/pairs.json
+  audit_manifest: outputs/05_diffthinker_controlled/maze/audit.json
+  eval_root: outputs/05_diffthinker_controlled/maze/eval
+  metrics_csv: outputs/05_diffthinker_controlled/maze/metrics.csv
+  summary: outputs/05_diffthinker_controlled/maze/summary.json
+  examples_dir: examples/diffthinker/maze
+
+examples:
+  selection_reason: "vanilla wrong AND selfcond correct at the protocol-selected FLOPs pair"
+  n_examples: 3
+  historical_ids:                   # historical paper cherry-picks (original record not bundled; see git history)
+    - 8_11_005
+    - 16_17_016
+    - 32_90_002

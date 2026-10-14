@@ -1,0 +1,122 @@
+# inherit_original uses the original images and ordered CSVs.
+# Geometry/font/generation-seed options below apply only to source_mode=regenerate.
+# Historical generation settings are not inferred from those reconstruction values.
+# Long multiplication — whole-worksheet column multiplication, LoRA on pretrained
+# FLUX.2-klein 4B (no text), whole-worksheet judge (qwen3.8-flash, k=2, strict).
+#
+# Main figure `fig:theory_aligned_tasks` (with E01/E03), judge prompt
+# `fig:lm_judge_prompt`, multi-seed `fig:multi_seed_long_multiplication`,
+# qualitative `fig:qual_multiplication`. New pairing is anchored at
+# SelfCond@125000 (main) / SelfCond@50000 (multi-seed) by the shared FLOPs
+# protocol (docs/flops_protocol.md).
+
+experiment:
+  id: long_multiplication
+  task: long_multiplication
+  backbone: flux2            # pure-visual FLUX.2-klein + LoRA (no text encoder)
+  mode: paper
+  config_version: 1
+
+data:
+  source_mode: hf                 # hf (default) | inherit_original | regenerate; env DATA_SOURCE_MODE overrides
+  hf_repo: alfalfa-w/self-conditioning-deep-reasoning-data   # full HF dataset id (override via HF_DATASET_REPO)
+  hf_revision: 35bb3cba58560223553d35b935946fb62db6b0b8 # pinned to the uploaded HF dataset revision
+  source_root: null               # inherit_original only: set ORIGINAL_REPO_ROOT to the original-data checkout
+  generator: long_multiplication_dataset.generate_random_digits_dataset
+  data_root: data/long_multiplication
+  train_metadata: data/long_multiplication/data_200k/metadata.csv
+  eval_metadata: data/long_multiplication/data_test100/metadata.csv
+  num_train_samples: 200000
+  num_eval_samples: 100
+  min_digits: 5
+  max_digits: 7
+  base: 10
+  cell_size: 16
+  padding: 16
+  image_width: null           # content-adaptive, rounded up to a multiple of 16
+  image_height: null
+  font_name: DejaVu Sans Mono
+  line_width: null            # -> 1 (auto-scale)
+  balance_digits: false
+  pack: true
+  shard_size: 10000
+  train_seed: 42
+  eval_seed: 1234
+
+model:
+  model_id: black-forest-labs/FLUX.2-klein-base-4B
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 32
+  lora_dropout: 0.0
+
+train:
+  num_processes: 4
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 2    # effective batch = 1 x 2 x 4 = 8
+  num_workers: 8
+  # 0 == source runs. Any 0 < N < total_shards would set partial_preload and
+  # silently disable shuffling (image_only/train.py: partial_preload / should_shuffle).
+  preload_shards_count: 0
+  learning_rate: 1e-4
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 1000
+  num_epochs: 15               # Vanilla; SelfCond overrides to 5
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 12500            # Vanilla cadence
+  eval_every_steps: 12500
+  selfcond_save_steps: 5000    # SelfCond cadence (save == eval per run)
+  selfcond_eval_every_steps: 5000
+  selfcond_num_epochs: 5
+
+method:
+  name: proj_condition
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: -10       # env-only: NOT in train_args.json, no CLI flag. Value = the
+                              # historical runs' code default.
+  condition_time_offset: 10   # CLI arg (--condition_time_offset), a different quantity
+
+flops:
+  measurement_micro_batches: 100
+  grad_accum: 2
+  num_processes: 4
+  rate_source: null                  # reference only: never written back; apply resolves rates from outputs.flops_dir/<method>/flops.json and accum/processes from train.*
+
+eval:
+  nfe: 50
+  seed: 1000
+  max_samples: 100
+  metric: judge_num_correct / 100    # full-set accuracy (all 100 in denominator)
+  judge: enabled
+  judge_model: qwen3.8-flash
+  judge_k: 2
+  judge_strict: true
+  eval_prompt_path: src/image_only/eval_prompt_longmul.txt
+  measure_inference_flops: false
+
+checkpoints:
+  vanilla_dir: outputs/02_long_multiplication/vanilla
+  selfcond_dir: outputs/02_long_multiplication/selfcond
+  paper_selfcond_step: 125000
+  paper_vanilla_step: 312500
+
+multiseed:
+  seeds: [1201, 1202, 1203]
+  paper_selfcond_step: 50000
+  paper_vanilla_step: 125000
+
+examples:
+  ids: [5, 10, 12]
+  selection_reason: "vanilla wrong AND selfcond correct at the last aligned pair"
+
+outputs:
+  flops_dir: outputs/02_long_multiplication/flops
+  pair_manifest: outputs/02_long_multiplication/pairs.json
+  audit_manifest: outputs/02_long_multiplication/audit.json
+  eval_root: outputs/02_long_multiplication/eval
+  summary: outputs/02_long_multiplication/summary.json
+  figure: outputs/02_long_multiplication/curves.svg

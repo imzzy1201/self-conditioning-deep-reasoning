@@ -1,0 +1,26 @@
+You are evaluating a visual reasoning model. You will see:
+1. The problem description (text prompt)
+2. The problem setup (condition image, if provided)
+3. The correct solution (target image)
+4. The model's generated solution (generated image)
+
+Your task: Determine if the generated solution correctly solves the problem.
+
+Problem description:
+{{prompt_text}}
+
+Problem setup (condition image):
+{{edit_image}}
+
+Correct solution:
+{{target_image}}
+
+Model's generated solution:
+{{generated_image}}
+
+Compare the generated solution against the correct solution. Consider whether the generated solution:
+- Correctly addresses the problem described in the prompt
+- Matches the correct solution in its reasoning steps and final answer
+- Is visually consistent with the problem setup (if condition image was provided)
+
+Provide a brief explanation, then answer `[YES]` if the generated solution is correct and `[NO]` if it is not.

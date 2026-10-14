@@ -1,0 +1,113 @@
+# inherit_original uses the original images and ordered CSVs.
+# Geometry/font/generation-seed options below apply only to source_mode=regenerate.
+# Historical generation settings are not inferred from those reconstruction values.
+# Line tracing — fixed m=50, 9M_LONG from-scratch transformer (no-text FLUX.2).
+#
+# Main figure `fig:theory_aligned_tasks` (with E02/E03), appendix multi-seed
+# `fig:multi_seed_line_tracing` and qualitative `fig:qual_line_tracing`.
+# The new pair is re-selected from SelfCond@53000 by the shared FLOPs protocol
+# (docs/flops_protocol.md).
+
+experiment:
+  id: line_tracing
+  task: line_tracing
+  backbone: flux2            # pure-visual FLUX.2-klein (no text encoder)
+  mode: paper                # paper | smoke
+  config_version: 1
+
+data:
+  source_mode: hf                 # hf (default) | inherit_original | regenerate; env DATA_SOURCE_MODE overrides
+  hf_repo: alfalfa-w/self-conditioning-deep-reasoning-data   # full HF dataset id (override via HF_DATASET_REPO)
+  hf_revision: 35bb3cba58560223553d35b935946fb62db6b0b8 # pinned to the uploaded HF dataset revision
+  source_root: null               # inherit_original only: set ORIGINAL_REPO_ROOT to the original-data checkout
+  generator: a5_line_trace_image_dataset.generate_dataset
+  data_root: data/line_tracing
+  train_metadata: data/line_tracing/train/metadata.csv
+  eval_metadata: data/line_tracing/val/metadata.csv
+  num_train_samples: 1000000
+  num_eval_samples: 20
+  num_permutations: 50       # fixed m=50 (mutually exclusive with range mode)
+  patch_size: 16
+  image_width: 3216          # active_columns(201) * patch_size
+  image_height: 80
+  column_stride: 4
+  line_width: 4
+  horizontal_line_width: 3
+  displacement3_line_width: 3
+  node_diameter: 9
+  palette: [[230,25,75],[60,180,75],[0,130,200],[245,130,48],[145,30,180]]
+  pack: true
+  shard_size: 10000
+  seed: 0                    # generation seed (NOT the training seed)
+
+model:
+  model_id: black-forest-labs/FLUX.2-klein-base-4B
+  from_scratch_preset: 9M_LONG
+
+train:
+  num_processes: 4
+  per_device_batch_size: 8
+  gradient_accumulation_steps: 1
+  num_workers: 2
+  preload_shards_count: 1
+  learning_rate: 2e-3
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 1000
+  num_epochs: 10
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 1000
+  eval_every_steps: 1000
+  resume_from_checkpoint: null
+
+method:
+  name: proj_condition        # vanilla | proj_condition (per-run override)
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: -10       # env-only: NOT in train_args.json, no CLI flag. Value = the
+                              # historical runs' code default.
+  condition_time_offset: 10   # CLI arg (--condition_time_offset), a different quantity
+
+flops:
+  measurement_micro_batches: 100
+  grad_accum: 1
+  num_processes: 4
+  rate_source: null           # reference only: never written back; apply resolves rates from outputs.flops_dir/<method>/flops.json and accum/processes from train.*
+
+eval:
+  nfe: 100
+  seed: 1000
+  max_samples: 20
+  metric: CTD                 # max_correct_prefix_steps (LCP)
+  judge: disabled             # no-text task; API judge never used
+  measure_inference_flops: false
+
+checkpoints:
+  vanilla_dir: outputs/01_line_tracing/vanilla
+  selfcond_dir: outputs/01_line_tracing/selfcond
+  paper_selfcond_step: 53000
+  paper_vanilla_step: 60000
+
+reuse: {}
+
+multiseed:
+  seeds: [1201, 1202, 1203]
+  paper_selfcond_step: 53000
+  eval_max_samples: 20
+
+examples:
+  ids:
+    - "00000_shard:000000:0"
+    - "00001_shard:000000:1"
+    - "00010_shard:000000:10"
+  selection_reason: "vanilla wrong AND selfcond correct at the last aligned pair"
+
+outputs:
+  flops_dir: outputs/01_line_tracing/flops
+  pair_manifest: outputs/01_line_tracing/pairs.json
+  audit_manifest: outputs/01_line_tracing/audit.json
+  eval_root: outputs/01_line_tracing/eval
+  summary: outputs/01_line_tracing/summary.json
+  figure: outputs/01_line_tracing/curves.svg

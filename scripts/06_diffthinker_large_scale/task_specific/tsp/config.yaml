@@ -1,0 +1,94 @@
+# TSP — single SelfCond QwenImage-Edit-2511 LoRA adapter (C07).
+# Paper: tab:diffthinker_large. SelfCond only: FLOPs measured/recorded, never matched.
+
+experiment:
+  id: diffthinker_large_tsp
+  group: 06_diffthinker_large_scale
+  table: tab:diffthinker_large
+  backbone: qwenimage
+  method: proj_condition
+  mode: paper
+  config_version: 1
+
+data:
+  task: tsp
+  data_root: data/diffthinker/EndoCoT-Data/TSP
+  train_metadata: data/diffthinker/formatted/TSP/metadata_train.csv
+  eval_metadata: data/diffthinker/formatted/TSP/metadata_test.csv
+  eval_data_root: data/diffthinker/EndoCoT/TSP   # 源 run 的 --eval_data_root（== gt_root）
+  gt_root: data/diffthinker/EndoCoT/TSP
+  num_eval_samples: 300
+
+model:
+  model_id: Qwen/Qwen-Image-Edit-2511
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_target_modules: "to_q,to_k,to_v,add_q_proj,add_k_proj,add_v_proj,to_out.0,to_add_out,img_mlp.net.2,img_mod.1,txt_mlp.net.2,txt_mod.1"
+
+train:
+  # Global batch 8 == the source runs' train/samples_seen / _step (all seven E06/E07
+  # runs: 186400/23300, 374400/46800, 149600/18750, 200000/25000, 912000/114000).
+  # W&B records per-device batch 1 and accum 1, so the source ran 8 processes here;
+  # every other experiment in this repo ran 4 and declares num_processes: 4.
+  num_processes: 8
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 1
+  num_workers: 8                  # W&B source-run config
+  compile: true                  # latest W&B run; RGB pairs crop to 512x512
+  log_every: 100                 # latest W&B run
+  gradient_checkpointing: true    # W&B source-run config (aligned 2026-10-03)
+  find_unused_parameters: true    # W&B source-run config (aligned 2026-10-03)
+  learning_rate: 1e-4
+  lr_scheduler: linear
+  lr_warmup_steps: 1000
+  num_epochs: 5
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 1875
+  eval_every_steps: 1875
+
+method:
+  name: proj_condition
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: 0
+  condition_time_offset: 10
+
+flops:
+  measurement_micro_batches: 100
+  mode: record
+  task: tsp
+  model_size: QwenImage-Edit-2511
+
+eval:
+  nfe: 50
+  seed: 0
+  judge: off
+  predictions_dir: outputs/06_diffthinker_large_scale/tsp/eval/predictions
+
+score:
+  task: tsp
+  needs_gpu: false
+  needs_gym: false
+  tsp_tolerance: 0.5
+
+checkpoints:
+  selfcond_dir: outputs/06_diffthinker_large_scale/tsp
+  paper_selfcond_step: final
+
+summarize:
+  tasks: [tsp]
+  difficulties:
+    tsp: [12, 15, 18]
+
+outputs:
+  root: outputs/06_diffthinker_large_scale/tsp
+  flops_dir: outputs/06_diffthinker_large_scale/tsp/flops
+  train_dir: outputs/06_diffthinker_large_scale/tsp
+  eval_dir: outputs/06_diffthinker_large_scale/tsp/eval
+  score_dir: outputs/06_diffthinker_large_scale/tsp/score
+  by_difficulty_csv: outputs/06_diffthinker_large_scale/tsp/by_difficulty.csv

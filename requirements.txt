@@ -1,0 +1,51 @@
+# Self-Conditioning Deep Reasoning — reproducibility environment.
+#
+# Compiled from the actual import closure of src/image_only, src/image_text, the data
+# generators, src/experiment_tools and src/analysis. Version pins that were
+# verified in the parent repository are kept; the rest are floors so the
+# resolver can pick a CUDA/torch-compatible build. Re-verify the combined
+# versions (torch + transformers + diffusers + vLLM + CUDA) before a real run
+# and record a version snapshot in the run manifest.
+
+# --- Core deep-learning stack ---
+torch>=2.4
+torchvision
+diffusers==0.37.1
+transformers==5.5.4
+accelerate
+peft
+safetensors
+
+# --- Data / image ---
+Pillow
+numpy
+opencv-python-headless
+datasets
+huggingface_hub          # dataset provisioning (snapshot_download) + upload_folder
+PyYAML
+rapidfuzz
+tqdm
+python-dotenv
+# Optional: `hf_transfer` markedly speeds up the multi-GB dataset upload/download
+# (pip install hf_transfer; enable with HF_HUB_ENABLE_HF_TRANSFER=1).
+
+# --- API judge ---
+openai
+
+# --- Optional logging ---
+wandb
+
+# --- Visualization / analysis ---
+matplotlib
+seaborn
+imageio
+
+# --- Structured-task evaluator (Sudoku/Jigsaw OCR via vLLM) ---
+# Only needed for the Sudoku/Jigsaw OCR evaluation. vLLM is tightly coupled to
+# the torch/CUDA build, so `pip install -r requirements.txt` on a machine without
+# a GPU is not expected to work.
+vllm
+qwen-vl-utils
+
+# --- VSP (FrozenLake) evaluator ---
+gymnasium

@@ -1,0 +1,119 @@
+# Unified — four-task joint training (VSP + Maze + TSP + Sudoku), NO Jigsaw (C08).
+# Paper: tab:diffthinker_large (the 12 difficulty columns). One SelfCond
+# QwenImage-Edit-2511 LoRA adapter trained on the joint dataset; evaluation and
+# scoring fan out per task so 06_summarize can fill all 12 columns for one model.
+#
+# The source run disables periodic eval (eval_every_steps=0,
+# save_steps=11400). Final results come from 04/05 on checkpoint-final/lora.
+
+experiment:
+  id: diffthinker_large_unified
+  group: 06_diffthinker_large_scale
+  table: tab:diffthinker_large
+  backbone: qwenimage
+  method: proj_condition
+  mode: paper
+  config_version: 1
+
+data:
+  task: unified
+  data_root: data/diffthinker/EndoCoT-Data   # 源 run 的 --data_root（不带任务后缀）
+  train_metadata: data/diffthinker/formatted/train_unified.csv
+  eval_metadata: data/diffthinker/unified/eval_unified.csv   # repo-local DERIVED, not upstream: no union eval CSV exists in the source tree (source run: periodic eval OFF, train_args.json eval_metadata_csv=null). Built deterministically by scripts/common/provision_diffthinker_data.sh from the four per-task formatted test CSVs (round-robin, GT-root-prefixed relative to data/diffthinker; 1200 rows). Diagnostic only.
+  gt_root: "data/diffthinker/EndoCoT/{FrozenLake,Maze,TSP,Sudoku} (per-task via data.tasks)"
+  num_eval_samples: 1200                                    # 200+300+300+400
+  tasks:
+    vsp:
+      formatted_dir: data/diffthinker/formatted/VSP
+      eval_metadata: data/diffthinker/formatted/VSP/metadata_test.csv
+      gt_root: data/diffthinker/EndoCoT/FrozenLake
+      gym: true
+      gpu: false
+    maze:
+      formatted_dir: data/diffthinker/formatted/Maze
+      eval_metadata: data/diffthinker/formatted/Maze/metadata_test.csv
+      gt_root: data/diffthinker/EndoCoT/Maze
+      gym: false
+      gpu: false
+    tsp:
+      formatted_dir: data/diffthinker/formatted/TSP
+      eval_metadata: data/diffthinker/formatted/TSP/metadata_test.csv
+      gt_root: data/diffthinker/EndoCoT/TSP
+      gym: false
+      gpu: false
+    sudoku:
+      formatted_dir: data/diffthinker/formatted/Sudoku
+      eval_metadata: data/diffthinker/formatted/Sudoku/metadata_test.csv
+      gt_root: data/diffthinker/EndoCoT/Sudoku
+      gym: false
+      gpu: true
+
+model:
+  model_id: Qwen/Qwen-Image-Edit-2511
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_target_modules: "to_q,to_k,to_v,add_q_proj,add_k_proj,add_v_proj,to_out.0,to_add_out,img_mlp.net.2,img_mod.1,txt_mlp.net.2,txt_mod.1"
+
+train:
+  # Global batch 8 == the source runs' train/samples_seen / _step (all seven E06/E07
+  # runs: 186400/23300, 374400/46800, 149600/18750, 200000/25000, 912000/114000).
+  # W&B records per-device batch 1 and accum 1, so the source ran 8 processes here;
+  # every other experiment in this repo ran 4 and declares num_processes: 4.
+  num_processes: 8
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 1
+  num_workers: 8                  # W&B source-run config
+  compile: true                  # latest W&B run; RGB pairs crop to 512x512
+  log_every: 100                 # latest W&B run
+  gradient_checkpointing: true    # W&B source-run config (aligned 2026-10-03)
+  find_unused_parameters: true    # W&B source-run config (aligned 2026-10-03)
+  learning_rate: 1e-4
+  lr_scheduler: linear
+  lr_warmup_steps: 1000
+  num_epochs: 5
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 11400
+  eval_every_steps: 0
+
+method:
+  name: proj_condition
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: 0
+  condition_time_offset: 10
+
+flops:
+  measurement_micro_batches: 100
+  mode: record
+  task: unified
+  model_size: QwenImage-Edit-2511
+
+eval:
+  nfe: 50
+  seed: 0
+  judge: off
+
+checkpoints:
+  selfcond_dir: outputs/06_diffthinker_large_scale/unified
+  paper_selfcond_step: final
+
+summarize:
+  tasks: [vsp, maze, tsp, sudoku]
+  difficulties:
+    vsp: [16, 32]
+    maze: [8, 16, 32]
+    tsp: [12, 15, 18]
+    sudoku: [45, 40, 35, 30]
+
+outputs:
+  root: outputs/06_diffthinker_large_scale/unified
+  flops_dir: outputs/06_diffthinker_large_scale/unified/flops
+  train_dir: outputs/06_diffthinker_large_scale/unified
+  eval_dir: outputs/06_diffthinker_large_scale/unified/eval
+  score_dir: outputs/06_diffthinker_large_scale/unified/score
+  by_difficulty_csv: outputs/06_diffthinker_large_scale/unified/by_difficulty.csv

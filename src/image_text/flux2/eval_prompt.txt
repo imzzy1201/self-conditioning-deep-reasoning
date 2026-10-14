@@ -1,0 +1,9 @@
+Compare these two images: the first is the solution to a question, and the second is a model's predicted answer. Parse the solution and the predicted answer, and then compare them to see if they match, determine whether the predicted answer is correct. Provide a brief explanation, then answer `[YES]` if the predicted answer is correct and `[NO]` if it is not.
+
+Solution:
+
+{{solution_image}}
+
+Predicted answer:
+
+{{predicted_image}}

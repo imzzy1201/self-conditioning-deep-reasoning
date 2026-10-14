@@ -1,0 +1,112 @@
+# source_mode=hf downloads line_tracing/nfe_eval (the 200-row val subset);
+# inherit_original reads the original val/metadata_first200.csv.
+# It includes the main eval first 20; generation seed below is unused in this mode.
+# NFE scaling / Line tracing — 04_nfe_scaling (single leaf: line_tracing).
+#
+# Reuses experiment 01's selected SelfCond/Vanilla pair AS-IS (no re-selection,
+# no re-training) and sweeps NFE 1..50 over 200 held-out m=50 line-tracing
+# instances. Produces `fig:nfe_scaling` (NFE x-axis) and `fig:inference_flops`
+# (transformer-forward FLOPs x-axis); BOTH axes consume the SAME cells.csv.
+#
+#   NFE axis   : --num_inference_steps sweep over [1..50], one run per method.
+#   FLOPs axis : per-cell transformer-forward FLOPs via --measure_inference_flops
+#                (one number per method/NFE/seed cell, NOT "NFE ≈ FLOPs").
+#
+# Checkpoints + chosen pair are experiment 01's own outputs, referenced by their
+# 01 paths below — do not invent a second pair (see reuse / checkpoints / outputs).
+
+experiment:
+  id: nfe_scaling
+  task: line_tracing
+  backbone: flux2                 # pure-visual FLUX.2-klein (no text encoder)
+  mode: paper                     # paper | smoke
+  config_version: 1
+
+data:
+  source_mode: hf                 # hf (default) | inherit_original | regenerate; env DATA_SOURCE_MODE overrides
+  hf_repo: alfalfa-w/self-conditioning-deep-reasoning-data   # full HF dataset id (override via HF_DATASET_REPO)
+  hf_revision: 35bb3cba58560223553d35b935946fb62db6b0b8 # pinned to the uploaded HF dataset revision
+  source_root: null               # inherit_original only: set ORIGINAL_REPO_ROOT to the original-data checkout
+  generator: a5_line_trace_image_dataset.generate_dataset
+  data_root: data/line_tracing/nfe_eval
+  eval_metadata: data/line_tracing/nfe_eval/val/metadata.csv
+  num_eval_samples: 200           # D04 held-out set (NOT D01's 20 main metric)
+  num_permutations: 50            # fixed m=50
+  patch_size: 16
+  image_width: 3216               # active_columns(201) * patch_size
+  image_height: 80
+  column_stride: 4
+  line_width: 4
+  horizontal_line_width: 3
+  displacement3_line_width: 3
+  node_diameter: 9
+  palette: [[230,25,75],[60,180,75],[0,130,200],[245,130,48],[145,30,180]]
+  pack: true
+  shard_size: 10000
+  # Generation seed for the nfe_eval split. MUST differ from 01's data.seed (0)
+  # so a regenerated `val` split does not replay 01's train/val RNG stream.
+  # inherit_original uses the first 200 original val rows, including D01's 20.
+  # The historical generation seed is unknown; this value applies to regeneration.
+  seed: 1000
+
+model:
+  model_id: black-forest-labs/FLUX.2-klein-base-4B
+  from_scratch_preset: 9M_LONG    # provenance: every reused checkpoint is this preset
+
+train:
+  # Provenance only — this experiment does NOT train. The values below record the
+  # reused 01 run's cadence so preflight's save==eval sync holds; they are never
+  # used to launch a trainer here.
+  num_processes: 4
+  per_device_batch_size: 8
+  gradient_accumulation_steps: 1
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 1000                # reused 01 checkpoint cadence (not re-run)
+  eval_every_steps: 1000
+  resume_from_checkpoint: null
+
+method:
+  name: proj_condition            # the SelfCond sampler; the sweep routes vanilla vs
+                                  # proj_condition per checkpoint via --method
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0
+  proj_time_offset: -10
+  condition_time_offset: 10
+
+flops:
+
+eval:
+  nfe_min: 1
+  nfe_max: 50                     # sweep every integer NFE in [1..50]
+  noise_seed: 0                   # confirmed in original nfe_001/seed_0000/eval_args.json;
+                                  # sample i uses torch.Generator(noise_seed + i) at every NFE
+  max_samples: 200                # D04 held-out — NOT D01's 20
+  metric: CTD                     # max_correct_prefix_steps.mean (LCP)
+  judge: disabled                 # no-text task; API judge never used
+  measure_inference_flops: true   # transformer forward only (no VAE/scheduler)
+  torch_dtype: bf16
+  device: cuda
+
+checkpoints:
+  # Experiment 01's own paths — consumed AS-IS, never re-selected here.
+  vanilla_dir: outputs/01_line_tracing/vanilla
+  selfcond_dir: outputs/01_line_tracing/selfcond
+  paper_selfcond_step: 53000
+  paper_vanilla_step: 60000       # provenance (historical endpoint) only
+  transformer_subdir: transformer # from-scratch saves under <checkpoint>/transformer
+
+reuse:
+  from_experiment: 01_line_tracing
+  retrain: false
+  pair_consumed_as_is: true       # never re-select per sample or per NFE
+
+outputs:
+  pair_source: outputs/01_line_tracing/pairs.json                 # 01's chosen pair (source)
+  pair_manifest: outputs/04_nfe_scaling/line_tracing/pairs.json   # frozen local copy (02)
+  eval_root: outputs/04_nfe_scaling/line_tracing/eval             # per-method summaries
+  cells_csv: outputs/04_nfe_scaling/line_tracing/cells.csv        # fig:nfe_scaling + fig:inference_flops
+  inference_flops: outputs/04_nfe_scaling/line_tracing/inference_flops.json
+  summary: outputs/04_nfe_scaling/line_tracing/summary.json

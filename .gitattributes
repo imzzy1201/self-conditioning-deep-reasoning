@@ -1,0 +1,33 @@
+# --- Line endings -----------------------------------------------------------
+# Target runtime is Linux/Bash + CUDA; this tree arrived CRLF from a Windows
+# checkout, which is not harmless here: a trailing CR silently contaminates shell
+# variables and paths (`x=1\r` != `1`, so comparisons and `cd` misbehave), and on
+# Linux a CRLF shebang is not executable (`bad interpreter: ... bash\r`).
+# `bash -n` catches neither. Store LF in the repository and check LF out
+# everywhere, so a Windows working copy cannot reintroduce CRLF.
+* text=auto eol=lf
+
+# --- Frozen reference layer: the bytes themselves are the record ------------
+# results/reference/** is a byte-for-byte copy (copy2) from the source tree, and 25
+# of its manifests record source_sha256 / source_size_bytes of those raw bytes, CRLF
+# included (e.g. nfe_scaling/line_tracing/vanilla_summary.json, 42181 bytes). Any
+# normalization would invalidate those hashes, so this subtree is never converted.
+# Seven files are the exception: on 2026-10-02 the cluster account paths inside
+# their provenance strings were replaced with <CLUSTER_ROOT> (and, in cer_curves.json,
+# the W&B account name with <WANDB_ENTITY>), which changes those bytes and only those
+# bytes — reversing the substitutions reproduces the recorded source_sha256. Their
+# manifests carry path_redaction / copy_sha256 / copy_size_bytes.
+# See results/reference/README.md.
+results/reference/** -text
+
+# --- Binary payloads: never touch line endings or diffs ---------------------
+*.png binary
+*.pdf binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary
+*.safetensors binary
+*.bin binary
+*.pt binary
+*.pth binary
+*.ckpt binary

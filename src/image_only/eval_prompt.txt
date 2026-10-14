@@ -1,0 +1,17 @@
+You are evaluating a visual reasoning model. You will see the problem setup image, the correct solution image, and the model's predicted solution image. The correct solution and predicted solution must correspond to the same problem setup. Decide whether the predicted solution correctly matches the correct solution for this input. Provide a brief explanation, then answer `[YES]` if the predicted solution is correct and `[NO]` if it is not.
+
+Problem description:
+
+{{prompt_text}}
+
+Problem setup / condition image:
+
+{{edit_image}}
+
+Correct solution:
+
+{{solution_image}}
+
+Predicted answer:
+
+{{predicted_image}}

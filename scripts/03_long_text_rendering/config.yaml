@@ -1,0 +1,157 @@
+# inherit_original uses the original images and ordered CSVs.
+# Geometry/font/generation-seed options below apply only to source_mode=regenerate.
+# Historical generation settings are not inferred from those reconstruction values.
+# Long text rendering (TinyStories) — OCR/CER task on FLUX.2-klein (image_text/flux2,
+# REAL text prompts via the Qwen3 encoder; guidance_scale=1.0, LoRA rank 32).
+#
+# Main figures `fig:theory_aligned_tasks` (with E01/E02) and `fig:long_text_ocr`
+# (CER curves); qualitative `fig:qual_text_rendering`. Vanilla 12 epochs, SelfCond
+# 4 epochs; the new pair is re-selected from SelfCond@74000 by the shared FLOPs
+# protocol (docs/flops_protocol.md).
+#
+# This leaf is a RE-IMPLEMENTATION. The historical data/training manifests were
+# not fully recovered; open caveats are noted inline below and in README.md
+# ("Scope & limitations").
+
+experiment:
+  id: long_text_rendering
+  task: long_text_rendering
+  backbone: flux2          # FLUX.2-klein + LoRA; text prompts ARE used (Qwen3), guidance_scale=1.0
+  mode: paper              # paper | smoke
+  config_version: 1
+
+data:
+  source_mode: hf                 # hf (default) | inherit_original | regenerate; env DATA_SOURCE_MODE overrides
+  hf_repo: alfalfa-w/self-conditioning-deep-reasoning-data   # full HF dataset id (override via HF_DATASET_REPO)
+  hf_revision: 35bb3cba58560223553d35b935946fb62db6b0b8 # pinned to the uploaded HF dataset revision
+  source_root: null               # inherit_original only: set ORIGINAL_REPO_ROOT to the original-data checkout
+  generator: text_dataset.generate_tinystories           # entry src/text_dataset/generate_tinystories.py
+  dataset_name: roneneldan/TinyStories
+  data_root: data/long_text_rendering                     # generator --output_dir (historical tree was data/tinystories/300k_no_edit_384x384 — not reused)
+  train_dir: data/long_text_rendering/train               # image_text --data_root must be the SPLIT dir (metadata image paths are split-relative)
+  eval_dir: data/long_text_rendering/test
+  train_metadata: data/long_text_rendering/train/metadata.csv
+  eval_metadata: data/long_text_rendering/test/metadata.csv
+  splits: train,validation
+  split_mapping: train=train,validation=test
+  max_samples: 300000            # per split (train); the validation split is smaller and passes through
+  num_eval_samples: 100          # = first 100 rows of test/metadata.csv (frozen by 01's manifest)
+  shuffle: false                 # deterministic HF order (historical shuffle/seed/selection unknown)
+  no_edit_image: true            # no condition image; prompt stored as text only (defining no-edit contract)
+  image_width: 384               # paper target (NOTE: the recovered generate_300k_no_edit.sh used 256x256/font13 — reconcile before claiming data equivalence)
+  image_height: 384
+  padding: 16
+  font_name: Consolas            # fallback chain Consolas -> DejaVu -> Liberation (src/text_dataset/rendering.py)
+  font_size: 13
+  line_spacing: 4
+  paragraph_gap_lines: 1
+  pack: false                    # PNG mode (matches the recovered 300k_no_edit script)
+  shard_size: 10000              # unused while pack=false
+  num_workers: 8
+  prompt_semantics: "full story text in prompt; image = longest-fitting wrapped prefix at fixed glyph size (NOTE: full-story vs prefix semantic differs from the paper text)"
+
+model:
+  model_id: black-forest-labs/FLUX.2-klein-base-4B
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 32
+  lora_dropout: 0.0
+  # LoRA target modules = trainer default (src/image_text/flux2/train.py --lora_target_modules); not re-listed here.
+
+train:
+  num_processes: 4
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4      # effective batch = 1 x 4 x 4 = 16
+  num_workers: 8
+  learning_rate: 1e-4
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 1000
+  num_epochs: 12                   # Vanilla -> 225000 steps (300000/16 = 18750 steps/epoch)
+  selfcond_num_epochs: 4           # SelfCond -> 75000 steps
+  mixed_precision: bf16
+  seed: 1201
+  save_steps: 5000                 # Vanilla cadence (save == eval)
+  eval_every_steps: 5000
+  selfcond_save_steps: 2000        # SelfCond cadence (save == eval)
+  selfcond_eval_every_steps: 2000
+  # NOTE: historical Vanilla ran save=2000 / eval=5000 (out of sync). Reconciled to
+  # save=eval=5000 so the preflight save==eval rule holds and Vanilla@190000
+  # (38*5000) still keeps a checkpoint; SelfCond@74000 = 37*2000 is unchanged.
+  # Optimizer betas/eps/weight_decay are NOT passed -> torch/accelerator defaults.
+  # save_final_checkpoint=true matches both source runs.
+
+method:
+  name: proj_condition              # vanilla | proj_condition (per-run override)
+  aux_loss: 1
+  aux_loss_weight: 0.5
+  stop_grad_proj: 1
+  zero_proj_when_absent: 0          # image_text default: DROP proj slot when absent
+  proj_time_offset: -10
+  condition_time_offset: 10
+  # SelfCond env contract (image_text, verified in src/image_text/experiment_router.py +
+  # src/image_text/flux2/proj_condition_loss.py): EXPERIMENT_METHOD=proj_condition,
+  # AUX_LOSS=1 AUX_LOSS_WEIGHT=0.5 STOP_GRAD_PROJ=1 ZERO_PROJ_WHEN_ABSENT=0
+  # PROJ_TIME_OFFSET=-10. Do NOT reuse the legacy src/image_only PROJ_TIME_OFFSET contract.
+  # No edit image removes the image-condition block. The projection block still
+  # exists in the second training pass and sampling steps after the first.
+
+flops:
+  measurement_micro_batches: 100
+  grad_accum: 4
+  num_processes: 4
+  rate_source: null                  # reference only: never written back; apply resolves rates from outputs.flops_dir/<method>/flops.json and accum/processes from train.*
+
+eval:
+  noise_shards: 4             # original periodic evaluation uses four contiguous rank-local shards
+  nfe: 50
+  seed: 0                            # seed + rank-local row index, reproduced by noise_shards=4
+  max_samples: 100
+  metric: "cer_mean (valid-only) | perfect/100"     # paper: 0.046 vanilla / 0.005 selfcond; perfect 13|44 out of 100
+  judge: cer                         # OCR CER (qwen3.8-flash via .env OPENAI_MODEL/OPENAI_API_BASE/OPENAI_API_KEY)
+  judge_model: qwen3.8-flash
+  measure_inference_flops: false
+
+checkpoints:
+  vanilla_dir: outputs/03_long_text_rendering/vanilla
+  selfcond_dir: outputs/03_long_text_rendering/selfcond
+  paper_selfcond_step: 74000         # 37 * 2000 (last SelfCond eval point under 4 epochs)
+  paper_vanilla_step: 190000         # 38 * 5000
+
+reuse: {}
+
+multiseed:
+  # Extension: the paper reports NO multi-seed numbers for this task, and this
+  # sweep freezes no paper reference value.
+  # SelfCond@74000 is the main-protocol anchor reused here, not a separate budget.
+  seeds: [1201, 1202, 1203]
+  paper_selfcond_step: 74000
+  paper_vanilla_step: 190000
+  eval_max_samples: 100
+
+examples:
+  ids: [7, 18, 20]                  # historical cherry-picks (CER 0.0106 / 0.0372 / 0.5177)
+  selection_reason: "vanilla wrong AND selfcond correct at the last aligned pair"
+
+reference:
+  # Provenance only — the same numbers are frozen under
+  # results/reference/synthetic/long_text_rendering/ (cer_curves.json, curves_aligned.json);
+  # this stage does not re-measure them.
+  vanilla_step: 190000
+  selfcond_step: 74000
+  vanilla_cer_mean: 0.04618062584843686    # reported 0.046
+  selfcond_cer_mean: 0.00503965183717034   # reported 0.005
+  vanilla_perfect: 13
+  selfcond_perfect: 44
+  vanilla_max_flops: 4.69943917215744e+19
+  vanilla_run: null               # W&B run id of the source run (not bundled)
+  selfcond_run: null              # W&B run id of the source run (not bundled)
+
+outputs:
+  flops_dir: outputs/03_long_text_rendering/flops
+  pair_manifest: outputs/03_long_text_rendering/pairs.json
+  audit_manifest: outputs/03_long_text_rendering/audit.json
+  eval_root: outputs/03_long_text_rendering/eval
+  summary: outputs/03_long_text_rendering/summary.json
+  figure: outputs/03_long_text_rendering/cer_curves.svg
+  cer_curves: outputs/03_long_text_rendering/cer_curves.json    # fig:long_text_ocr series
+  reference_cer_curves: results/reference/synthetic/long_text_rendering/cer_curves.json

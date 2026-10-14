@@ -1,0 +1,19 @@
+You are evaluating a visual reasoning model on a column-multiplication task. You will see a problem setup image (the two numbers to multiply, written in column form), the correct solution image (the fully worked-out column multiplication with the correct final product), and the model's predicted solution image.
+
+Decide whether the predicted solution is correct: it must correspond to the same problem setup as the correct solution, the final product it shows must equal the correct product, and the intermediate steps, including the carries, must match the correct solution as well. If the predicted solution is blank, truncated, or unreadable, answer `[NO]`. Provide a brief explanation, then answer `[YES]` if the predicted solution is correct and `[NO]` if it is not.
+
+Problem description:
+
+{{prompt_text}}
+
+Problem setup / condition image:
+
+{{edit_image}}
+
+Correct solution:
+
+{{solution_image}}
+
+Predicted answer:
+
+{{predicted_image}}
